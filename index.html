@@ -467,6 +467,32 @@ h1, h2, h3 {
   margin-top: 14px;
 }
 
+.botao-whatsapp {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 10px;
+  background: #25d366;
+  color: #0b1b12;
+  font-family: 'Oswald', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  margin-top: 14px;
+  transition: filter 0.15s;
+}
+
+.botao-whatsapp:hover {
+  filter: brightness(1.08);
+}
+
 .sucesso {
   border-color: var(--sucesso);
   text-align: center;
@@ -647,6 +673,7 @@ h1, h2, h3 {
   <section class="cartao sucesso" id="secao-sucesso" hidden>
     <h2>✅ Agendamento confirmado!</h2>
     <div id="sucesso-conteudo"></div>
+    <a id="botao-whatsapp-confirmacao" class="botao-whatsapp" target="_blank" rel="noopener noreferrer">📲 Confirmar no WhatsApp</a>
     <button id="botao-novo-agendamento" class="botao-secundario">Fazer outro agendamento</button>
   </section>
 
@@ -699,6 +726,7 @@ const els = {
   botaoConfirmar: document.getElementById('botao-confirmar'),
   secaoSucesso: document.getElementById('secao-sucesso'),
   sucessoConteudo: document.getElementById('sucesso-conteudo'),
+  botaoWhatsappConfirmacao: document.getElementById('botao-whatsapp-confirmacao'),
   botaoNovoAgendamento: document.getElementById('botao-novo-agendamento'),
   popupOverlay: document.getElementById('popup-overlay'),
   popupFechar: document.getElementById('popup-fechar'),
@@ -779,6 +807,48 @@ function dataISOLocal(data) {
   els.inputData.min = dataISOLocal(hoje);
   els.inputData.max = dataISOLocal(max);
 })();
+
+const CHAVE_CLIENTE_SALVO = 'caymi_cliente';
+
+function salvarClienteLocal(nome, telefone) {
+  try {
+    localStorage.setItem(CHAVE_CLIENTE_SALVO, JSON.stringify({ nome: nome, telefone: telefone }));
+  } catch (e) {
+    // localStorage indisponível (modo privado, etc.) — segue sem salvar
+  }
+}
+
+function preencherClienteSalvo() {
+  try {
+    const bruto = localStorage.getItem(CHAVE_CLIENTE_SALVO);
+    if (!bruto) return;
+    const salvo = JSON.parse(bruto);
+    if (!salvo) return;
+    if (salvo.nome) els.inputNome.value = salvo.nome;
+    if (salvo.telefone) els.inputTelefone.value = salvo.telefone;
+    validarFormulario();
+  } catch (e) {
+    // dado salvo corrompido — ignora
+  }
+}
+
+function telefoneParaWhatsapp(telefone) {
+  let digitos = telefone.replace(/\D/g, '');
+  digitos = digitos.replace(/^0+/, '');
+  if (digitos.length <= 11) digitos = '55' + digitos;
+  return digitos;
+}
+
+function linkConfirmacaoWhatsapp(nome, telefone, servicosSelecionados) {
+  const numero = telefoneParaWhatsapp(telefone);
+  const mensagem =
+    'Olá, ' + nome + '! Seu agendamento na ' + NOME_BARBEARIA + ' foi confirmado:' + '\n\n' +
+    'Serviços: ' + servicosSelecionados.join(', ') + '\n' +
+    'Data: ' + formatarDataBR(estado.data) + ' às ' + formatarHora(estado.hora) + '\n' +
+    'Endereço: ' + ENDERECO_BARBEARIA + '\n\n' +
+    'Até lá!';
+  return 'https://wa.me/' + numero + '?text=' + encodeURIComponent(mensagem);
+}
 
 async function carregarServicos() {
   const resultado = await supabase
@@ -988,10 +1058,11 @@ els.botaoConfirmar.addEventListener('click', async () => {
     return;
   }
 
-  mostrarSucesso(nome, servicosSelecionados);
+  salvarClienteLocal(nome, telefone);
+  mostrarSucesso(nome, telefone, servicosSelecionados);
 });
 
-function mostrarSucesso(nome, servicosSelecionados) {
+function mostrarSucesso(nome, telefone, servicosSelecionados) {
   const nomesServicos = servicosSelecionados.join(', ');
   els.sucessoConteudo.innerHTML =
     '<div class="resumo-linha"><span>Nome</span><span>' + escaparHtml(nome) + '</span></div>' +
@@ -1000,6 +1071,8 @@ function mostrarSucesso(nome, servicosSelecionados) {
     '<div class="resumo-linha"><span>Horário</span><span>' + formatarHora(estado.hora) + '</span></div>' +
     '<div class="resumo-total"><span>Total</span><span>' + formatarPreco(precoTotalSelecionado()) + '</span></div>' +
     '<p class="dica" style="margin-top:12px;">Se precisar remarcar ou cancelar, entre em contato diretamente.</p>';
+
+  els.botaoWhatsappConfirmacao.href = linkConfirmacaoWhatsapp(nome, telefone, servicosSelecionados);
 
   document.querySelectorAll('main.container > .cartao:not(.sucesso)').forEach((el) => (el.hidden = true));
   els.secaoSucesso.hidden = false;
@@ -1010,6 +1083,7 @@ els.botaoNovoAgendamento.addEventListener('click', () => {
   window.location.reload();
 });
 
+preencherClienteSalvo();
 carregarServicos();
 </script>
 </body>
