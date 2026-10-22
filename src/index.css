@@ -19,14 +19,15 @@
 body {
   background-color: var(--preto);
   color: var(--texto);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Noto Color Emoji garante os mesmos emojis em qualquer aparelho (sistemas antigos mostram quadrados) */
+  font-family: 'Inter', system-ui, -apple-system, 'Noto Color Emoji', sans-serif;
   min-height: 100vh;
   margin: 0;
   padding: 0;
 }
 
 h1, h2, h3, h4, .font-oswald {
-  font-family: 'Oswald', sans-serif;
+  font-family: 'Oswald', 'Noto Color Emoji', sans-serif;
   letter-spacing: 0.03em;
 }
 

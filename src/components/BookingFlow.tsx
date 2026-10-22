@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { Servico, ConfiguracoesBarbearia } from '../types';
 import { storageService } from '../services/storage';
+import { linkWhatsapp } from '../utils/whatsapp';
+import { enviarAvisoAgendamento } from '../services/supabaseService';
 
 interface BookingFlowProps {
   config: ConfiguracoesBarbearia;
@@ -177,6 +179,9 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
         status: 'confirmado',
       });
 
+      // Aviso no Telegram do barbeiro (não bloqueia a confirmação)
+      void enviarAvisoAgendamento(config, novoAg);
+
       // Save client details for future bookings
       storageService.salvarCliente(nome.trim(), telefone.trim());
 
@@ -215,9 +220,6 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
   // WhatsApp link creation
   const getWhatsappUrl = () => {
     if (!sucesso) return '#';
-    let digitos = sucesso.telefone.replace(/\D/g, '').replace(/^0+/, '');
-    if (digitos.length <= 11) digitos = '55' + digitos;
-
     const mensagem =
       `Olá, ${sucesso.nome}! ✅ Seu agendamento na ${config.nome} foi confirmado:\n\n` +
       `✂️ ${sucesso.servicos.join(', ')}\n` +
@@ -225,7 +227,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
       `📍 ${config.endereco}\n\n` +
       `Até lá!`;
 
-    return `https://wa.me/${digitos}?text=${encodeURIComponent(mensagem)}`;
+    return linkWhatsapp(sucesso.telefone, mensagem);
   };
 
   const mapaEmbedUrl = `https://www.google.com/maps?q=${encodeURIComponent(config.endereco)}&output=embed`;

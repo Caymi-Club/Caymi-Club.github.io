@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Clock, Calendar, MapPin, Check, Bell, ExternalLink, MessageCircle, X, Sparkles } from 'lucide-react';
 import { UltimoAgendamentoCliente, ConfiguracoesBarbearia } from '../types';
 import { storageService } from '../services/storage';
+import { linkWhatsapp } from '../utils/whatsapp';
 
 interface ActiveBookingReminderProps {
   lembrete: UltimoAgendamentoCliente;
@@ -39,16 +40,14 @@ export const ActiveBookingReminder: React.FC<ActiveBookingReminderProps> = ({
   );
 
   // Link do WhatsApp
-  let digitos = lembrete.telefone.replace(/\D/g, '').replace(/^0+/, '');
-  if (digitos.length <= 11) digitos = '55' + digitos;
-
-  const whatsappUrl = `https://wa.me/${digitos}?text=${encodeURIComponent(
+  const whatsappUrl = linkWhatsapp(
+    lembrete.telefone,
     `Olá, ${lembrete.nome}! ✅ Lembrete do seu agendamento na ${config.nome}:\n\n` +
       `✂️ ${lembrete.servicos.join(', ')}\n` +
       `🗓️ ${formatarDataBR(lembrete.data)} às ${lembrete.hora}\n` +
       `📍 ${config.endereco}\n\n` +
       `Aguardamos você!`
-  )}`;
+  );
 
   // Notificação do Navegador
   const handleAtivarLembreteNavegador = async () => {

@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Scissors, MapPin, Phone } from 'lucide-react';
 import { ConfiguracoesBarbearia } from '../types';
+import { LOGO_AC } from '../constants/assets';
 
 interface HeaderProps {
   config: ConfiguracoesBarbearia;
@@ -9,6 +10,8 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ config, modoAtual, setModoAtual }) => {
+  const [logoFalhou, setLogoFalhou] = useState(false);
+
   return (
     <header className="relative border-b-2 border-[#cf9b56] bg-gradient-to-b from-[#3b2a1e] via-[#1c1815] to-[#121010] px-4 pt-7 pb-6 text-center shadow-2xl">
       {/* Se o modo admin estiver ativo, exibe barra discreta no topo */}
@@ -27,18 +30,21 @@ export const Header: React.FC<HeaderProps> = ({ config, modoAtual, setModoAtual 
 
       <div className="mx-auto flex max-w-2xl flex-col items-center">
         {/* Emblem / Avatar Logo */}
-        <div className="relative mb-3 flex h-24 w-24 items-center justify-center rounded-full border-3 border-[#cf9b56] bg-[#221c18] shadow-[0_6px_25px_rgba(0,0,0,0.65)] ring-4 ring-[#cf9b56]/20">
-          <div className="flex flex-col items-center justify-center">
-            <div className="flex items-center gap-1 text-[#e3b976]">
-              <Scissors className="h-6 w-6 stroke-[2.2]" />
+        <div className="relative mb-3 flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-3 border-[#cf9b56] bg-white shadow-[0_6px_25px_rgba(0,0,0,0.65)] ring-4 ring-[#cf9b56]/20">
+          {logoFalhou ? (
+            <div className="flex flex-col items-center justify-center bg-[#221c18] h-full w-full">
+              <Scissors className="h-6 w-6 stroke-[2.2] text-[#e3b976]" />
+              <span className="font-oswald text-xs font-bold tracking-widest text-[#cf9b56]">BARBER</span>
+              <span className="text-[9px] uppercase tracking-wider text-[#b9ac9c]">EST. 2020</span>
             </div>
-            <span className="font-oswald text-xs font-bold tracking-widest text-[#cf9b56]">
-              BARBER
-            </span>
-            <span className="text-[9px] uppercase tracking-wider text-[#b9ac9c]">
-              EST. 2020
-            </span>
-          </div>
+          ) : (
+            <img
+              src={LOGO_AC}
+              alt={`Logo ${config.nome}`}
+              onError={() => setLogoFalhou(true)}
+              className="h-full w-full scale-110 object-cover"
+            />
+          )}
         </div>
 
         {/* Title & Slogan */}

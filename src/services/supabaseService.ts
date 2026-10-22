@@ -84,6 +84,30 @@ export function observarSessaoAdmin(
   return () => data.subscription.unsubscribe();
 }
 
+// Registra o agendamento no Supabase só para disparar o aviso no Telegram (Database Webhook).
+// Nunca lança erro: se falhar, o agendamento do cliente continua valendo.
+export async function enviarAvisoAgendamento(
+  config: ConfiguracoesBarbearia,
+  ag: Pick<Agendamento, 'cliente_nome' | 'cliente_telefone' | 'inicio' | 'fim' | 'servicos' | 'preco_total'>
+): Promise<void> {
+  const client = getSupabaseClient(config);
+  if (!client) return;
+
+  try {
+    const { error } = await client.from('avisos_agendamento').insert({
+      cliente_nome: ag.cliente_nome,
+      cliente_telefone: ag.cliente_telefone,
+      inicio: ag.inicio,
+      fim: ag.fim,
+      servicos: ag.servicos,
+      preco_total: ag.preco_total,
+    });
+    if (error) console.warn('Não foi possível enviar o aviso do agendamento:', error.message);
+  } catch (err) {
+    console.warn('Falha ao enviar o aviso do agendamento:', err);
+  }
+}
+
 export async function testSupabaseConnection(url: string, key: string): Promise<{ success: boolean; message: string }> {
   try {
     const client = createClient(url, key, { auth: { persistSession: false } });
@@ -114,14 +138,20 @@ export async function sincronizarServicos(config: ConfiguracoesBarbearia): Promi
       return storageService.getServicos();
     }
 
-    const formatados: Servico[] = data.map((s, idx) => ({
-      id: `supa-${idx}`,
-      nome: s.nome,
-      preco: Number(s.preco),
-      duracao_minutos: Number(s.duracao_minutos) || 30,
-      ativo: s.ativo !== false,
-      icone: s.nome.toLowerCase().includes('barba') ? '🪒' : '✂️',
-    }));
+    // O Supabase não guarda ícone nem descrição: reaproveita os do serviço local de mesmo nome.
+    const locais = storageService.getServicos();
+    const formatados: Servico[] = data.map((s, idx) => {
+      const local = locais.find((l) => l.nome === s.nome);
+      return {
+        id: `supa-${idx}`,
+        nome: s.nome,
+        preco: Number(s.preco),
+        duracao_minutos: Number(s.duracao_minutos) || 30,
+        ativo: s.ativo !== false,
+        icone: local?.icone || (s.nome.toLowerCase().includes('barba') ? '🪒' : '✂️'),
+        descricao: local?.descricao,
+      };
+    });
 
     storageService.saveServicos(formatados);
     return formatados;

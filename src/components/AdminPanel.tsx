@@ -37,6 +37,7 @@ import { Servico, Agendamento, ConfiguracoesBarbearia, FormaPagamento } from '..
 import { storageService } from '../services/storage';
 import { testSupabaseConnection } from '../services/supabaseService';
 import { PerformanceChart } from './PerformanceChart';
+import { linkWhatsapp } from '../utils/whatsapp';
 
 interface AdminPanelProps {
   config: ConfiguracoesBarbearia;
@@ -129,12 +130,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
-  const limparTelefone = (tel: string) => {
-    let digitos = tel.replace(/\D/g, '').replace(/^0+/, '');
-    if (digitos.length <= 11) digitos = '55' + digitos;
-    return digitos;
-  };
-
   // Recarregar agendamentos
   const atualizarListaAgendamentos = () => {
     setAgendamentos(storageService.getAgendamentos());
@@ -219,7 +214,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
       if (ag.status !== 'bloqueado' && ag.cliente_telefone !== '-') {
         const msg = `Olá, ${ag.cliente_nome}! Seu agendamento na ${config.nome} para ${formatarDataBR(ag.inicio)} às ${formatarHora(ag.inicio)} foi cancelado. Se desejar remarcar, entre em contato ou acesse nosso link!`;
-        const linkWhats = `https://wa.me/${limparTelefone(ag.cliente_telefone)}?text=${encodeURIComponent(msg)}`;
+        const linkWhats = linkWhatsapp(ag.cliente_telefone, msg);
         setAvisoAcao({
           texto: `Agendamento de ${ag.cliente_nome} cancelado.`,
           linkWhats,
@@ -267,7 +262,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
     if (modalRemarcar.cliente_telefone !== '-') {
       const msg = `Olá, ${modalRemarcar.cliente_nome}! ✅ Seu agendamento na ${config.nome} foi remarcado para ${formatarDataBR(remarcarData)} às ${remarcarHora}. Te esperamos!`;
-      const linkWhats = `https://wa.me/${limparTelefone(modalRemarcar.cliente_telefone)}?text=${encodeURIComponent(msg)}`;
+      const linkWhats = linkWhatsapp(modalRemarcar.cliente_telefone, msg);
       setAvisoAcao({
         texto: `Horário de ${modalRemarcar.cliente_nome} remarcado para ${formatarDataBR(remarcarData)} às ${remarcarHora}.`,
         linkWhats,
@@ -280,8 +275,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Send WhatsApp Reminder
   const handleEnviarLembreteWhats = (ag: Agendamento) => {
     const msg = `Olá, ${ag.cliente_nome}! 💈 Lembramos do seu horário agendado hoje às ${formatarHora(ag.inicio)} na ${config.nome}.\n\n✂️ Serviços: ${ag.servicos.join(', ')}\n📍 Endereço: ${config.endereco}\n\nAguardamos você!`;
-    const url = `https://wa.me/${limparTelefone(ag.cliente_telefone)}?text=${encodeURIComponent(msg)}`;
-    window.open(url, '_blank');
+    window.open(linkWhatsapp(ag.cliente_telefone, msg), '_blank');
   };
 
   // Concluir e Dar Baixa no Pagamento

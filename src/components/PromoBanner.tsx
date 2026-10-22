@@ -1,12 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Smartphone, ChevronRight } from 'lucide-react';
 import { ConfiguracoesBarbearia } from '../types';
+import { ICONE_APP_PARCEIRO } from '../constants/assets';
 
 interface PromoBannerProps {
   config: ConfiguracoesBarbearia;
 }
 
 export const PromoBanner: React.FC<PromoBannerProps> = ({ config }) => {
+  const [iconeFalhou, setIconeFalhou] = useState(false);
+
   if (!config.exibir_promo_app) return null;
 
   return (
@@ -16,9 +19,18 @@ export const PromoBanner: React.FC<PromoBannerProps> = ({ config }) => {
       rel="noopener noreferrer"
       className="group flex items-center gap-3.5 rounded-xl border border-[#cf9b56] bg-gradient-to-r from-[#6f4426]/35 to-[#221c18]/90 p-3.5 text-decoration-none shadow-md transition-all hover:-translate-y-0.5 hover:border-[#e3b976]"
     >
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#cf9b56] to-[#6f4426] shadow-md">
-        <Smartphone className="h-6 w-6 text-[#121010]" />
-      </div>
+      {iconeFalhou ? (
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#cf9b56] to-[#6f4426] shadow-md">
+          <Smartphone className="h-6 w-6 text-[#121010]" />
+        </div>
+      ) : (
+        <img
+          src={ICONE_APP_PARCEIRO}
+          alt={config.promo_app_nome}
+          onError={() => setIconeFalhou(true)}
+          className="h-12 w-12 shrink-0 rounded-xl object-cover shadow-md"
+        />
+      )}
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
