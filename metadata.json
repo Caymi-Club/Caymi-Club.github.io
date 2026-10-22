@@ -1,0 +1,6 @@
+{
+  "name": "Allan Caymi Barbearia",
+  "description": "Sistema de agendamento online e gestão para Allan Caymi Barbearia com seleção de serviços, horários, resumo e painel de administração.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
