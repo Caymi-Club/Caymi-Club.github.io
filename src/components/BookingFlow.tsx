@@ -18,7 +18,11 @@ import { Servico, ConfiguracoesBarbearia } from '../types';
 import { storageService } from '../services/storage';
 import { linkWhatsapp } from '../utils/whatsapp';
 import { dataLocalISO } from '../utils/datas';
-import { enviarAvisoAgendamento } from '../services/supabaseService';
+import {
+  enviarAvisoAgendamento,
+  buscarHorariosOcupados,
+  registrarAgendamentoRemoto,
+} from '../services/supabaseService';
 
 interface BookingFlowProps {
   config: ConfiguracoesBarbearia;
@@ -30,8 +34,9 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
   const [servicosSelecionados, setServicosSelecionados] = useState<string[]>([]);
   const [dataSelecionada, setDataSelecionada] = useState<string>('');
   const [horaSelecionada, setHoraSelecionada] = useState<string>('');
-  const [horariosDisponiveis, setHorariosDisponiveis] = useState<string[]>([]);
+  const [grade, setGrade] = useState<Array<{ hora: string; livre: boolean }>>([]);
   const [carregandoHorarios, setCarregandoHorarios] = useState(false);
+  const [versaoHorarios, setVersaoHorarios] = useState(0);
 
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
@@ -68,31 +73,33 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
     }
   }, []);
 
-  // Update available times whenever selected date or selected services change
+  // Update available times whenever selected date or selected services change.
+  // Consulta o Supabase para enxergar horários ocupados por outros clientes e pelo barbeiro.
   useEffect(() => {
     if (!dataSelecionada || servicosSelecionados.length === 0) {
-      setHorariosDisponiveis([]);
+      setGrade([]);
       setHoraSelecionada('');
       return;
     }
 
+    let cancelado = false;
     setCarregandoHorarios(true);
     const duracaoTotal = duracaoTotalSelecionada();
 
-    // Small delay to simulate smooth loading
-    const timer = setTimeout(() => {
-      const slots = storageService.getHorariosDisponiveis(dataSelecionada, duracaoTotal);
-      setHorariosDisponiveis(slots);
+    buscarHorariosOcupados(config, dataSelecionada).then((ocupados) => {
+      if (cancelado) return;
+      const slots = storageService.getGradeHorarios(dataSelecionada, duracaoTotal, ocupados || []);
+      setGrade(slots);
       setCarregandoHorarios(false);
 
-      // If previously selected time is not in the new slots, clear it
-      if (horaSelecionada && !slots.includes(horaSelecionada)) {
-        setHoraSelecionada('');
-      }
-    }, 150);
+      // If previously selected time is no longer free, clear it
+      setHoraSelecionada((atual) => (slots.some((s) => s.hora === atual && s.livre) ? atual : ''));
+    });
 
-    return () => clearTimeout(timer);
-  }, [dataSelecionada, servicosSelecionados]);
+    return () => {
+      cancelado = true;
+    };
+  }, [dataSelecionada, servicosSelecionados, versaoHorarios, config.supabase_url, config.supabase_anon_key]);
 
   // Helpers
   const toggleServico = (nomeServico: string) => {
@@ -152,7 +159,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
     contarDigitos(telefone) >= 8;
 
   // Confirm appointment
-  const handleConfirmar = () => {
+  const handleConfirmar = async () => {
     if (!formularioValido || enviando) return;
 
     setErro(null);
@@ -161,6 +168,18 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
     try {
       const duracao = duracaoTotalSelecionada();
       const preco = precoTotalSelecionado();
+
+      // Confere de novo no Supabase: outro cliente pode ter pegado o horário enquanto este preenchia os dados
+      const ocupados = await buscarHorariosOcupados(config, dataSelecionada);
+      const aindaLivre = storageService
+        .getHorariosDisponiveis(dataSelecionada, duracao, ocupados || [])
+        .includes(horaSelecionada);
+      if (!aindaLivre) {
+        setErro('Esse horário acabou de ser ocupado. Escolha outro horário.');
+        setHoraSelecionada('');
+        setVersaoHorarios((v) => v + 1);
+        return;
+      }
 
       const [ano, mes, dia] = dataSelecionada.split('-').map(Number);
       const [hora, minuto] = horaSelecionada.split(':').map(Number);
@@ -179,6 +198,14 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
         duracao_total_minutos: duracao,
         status: 'confirmado',
       });
+
+      // Registra no Supabase para o horário ficar ocupado em todos os aparelhos
+      const remoto = await registrarAgendamentoRemoto(config, novoAg);
+      if (!remoto.success) {
+        storageService.atualizarAgendamento(novoAg.id, { status: 'cancelado' });
+        setErro('Não foi possível confirmar o agendamento agora. Verifique sua internet e tente novamente.');
+        return;
+      }
 
       // Aviso no Telegram do barbeiro (não bloqueia a confirmação)
       void enviarAvisoAgendamento(config, novoAg);
@@ -381,30 +408,38 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
             <p className="p-4 text-center text-xs text-[#b9ac9c] animate-pulse">
               Consultando horários livres…
             </p>
-          ) : horariosDisponiveis.length === 0 ? (
+          ) : !grade.some((s) => s.livre) ? (
             <p className="rounded-xl border border-dashed border-[#6f4426] bg-[#1c1815]/50 p-4 text-center text-xs text-[#e3b976]">
               Nenhum horário livre para essa data ou os horários já foram preenchidos. Tente outra data.
             </p>
           ) : (
-            <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-              {horariosDisponiveis.map((hora) => {
-                const selecionado = horaSelecionada === hora;
-                return (
-                  <button
-                    key={hora}
-                    type="button"
-                    onClick={() => setHoraSelecionada(hora)}
-                    className={`font-oswald rounded-lg border py-2.5 text-center text-sm font-semibold transition-all ${
-                      selecionado
-                        ? 'border-[#cf9b56] bg-[#cf9b56] text-[#121010] shadow-md'
-                        : 'border-[#3a2f27] bg-[#1c1815] text-[#f3ece3] hover:border-[#cf9b56] hover:text-[#e3b976]'
-                    }`}
-                  >
-                    {hora}
-                  </button>
-                );
-              })}
-            </div>
+            <>
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                {grade.map(({ hora, livre }) => {
+                  const selecionado = horaSelecionada === hora;
+                  return (
+                    <button
+                      key={hora}
+                      type="button"
+                      disabled={!livre}
+                      onClick={() => setHoraSelecionada(hora)}
+                      className={`font-oswald rounded-lg border py-2.5 text-center text-sm font-semibold transition-all ${
+                        !livre
+                          ? 'cursor-not-allowed border-[#3a2f27]/60 bg-[#1c1815]/40 text-[#b9ac9c]/40 line-through'
+                          : selecionado
+                          ? 'border-[#cf9b56] bg-[#cf9b56] text-[#121010] shadow-md'
+                          : 'border-[#3a2f27] bg-[#1c1815] text-[#f3ece3] hover:border-[#cf9b56] hover:text-[#e3b976]'
+                      }`}
+                    >
+                      {hora}
+                    </button>
+                  );
+                })}
+              </div>
+              {grade.some((s) => !s.livre) && (
+                <p className="mt-2 text-[11px] text-[#b9ac9c]">Horários riscados já estão marcados.</p>
+              )}
+            </>
           )}
         </div>
       </section>

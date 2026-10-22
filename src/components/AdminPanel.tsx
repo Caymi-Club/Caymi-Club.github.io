@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Scissors,
   Calendar,
@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { Servico, Agendamento, ConfiguracoesBarbearia, FormaPagamento } from '../types';
 import { storageService } from '../services/storage';
-import { testSupabaseConnection } from '../services/supabaseService';
+import { testSupabaseConnection, salvarAgendamentoRemoto, sincronizarAgendamentosAdmin } from '../services/supabaseService';
 import { PerformanceChart } from './PerformanceChart';
 import { linkWhatsapp } from '../utils/whatsapp';
 import { dataLocalISO, dataLocalDeISO, mesLocalISO } from '../utils/datas';
@@ -138,6 +138,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setAgendamentos(storageService.getAgendamentos());
   };
 
+  // Traz do Supabase os agendamentos feitos pelos clientes (celulares deles) ao abrir e a cada 30s
+  useEffect(() => {
+    let ativo = true;
+    const sincronizar = async () => {
+      const mudou = await sincronizarAgendamentosAdmin(config);
+      if (ativo && mudou) atualizarListaAgendamentos();
+    };
+    sincronizar();
+    const timer = setInterval(sincronizar, 30000);
+    return () => {
+      ativo = false;
+      clearInterval(timer);
+    };
+  }, [config.supabase_url, config.supabase_anon_key]);
+
+  // Envia ao Supabase a versão atual do agendamento para o horário refletir nos celulares dos clientes
+  const enviarAgendamentoRemoto = (id: string) => {
+    const ag = storageService.getAgendamentos().find((a) => a.id === id);
+    if (ag) void salvarAgendamentoRemoto(config, ag);
+  };
+
   // Save General Configuration
   const handleSalvarConfig = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -213,6 +234,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleCancelarAgendamento = (ag: Agendamento) => {
     if (window.confirm(`Deseja realmente cancelar o agendamento de ${ag.cliente_nome}?`)) {
       storageService.atualizarAgendamento(ag.id, { status: 'cancelado' });
+      enviarAgendamentoRemoto(ag.id);
       atualizarListaAgendamentos();
 
       if (ag.status !== 'bloqueado' && ag.cliente_telefone !== '-') {
@@ -261,6 +283,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       status: 'confirmado',
     });
 
+    enviarAgendamentoRemoto(modalRemarcar.id);
     atualizarListaAgendamentos();
 
     if (modalRemarcar.cliente_telefone !== '-') {
@@ -285,6 +308,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleConfirmarBaixaPagamento = () => {
     if (!modalPagamento) return;
     storageService.marcarConcluido(modalPagamento.id, formaEscolhida);
+    enviarAgendamentoRemoto(modalPagamento.id);
     atualizarListaAgendamentos();
     setModalPagamento(null);
   };
@@ -292,7 +316,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Create Block Period
   const handleCriarBloqueio = (e: React.FormEvent) => {
     e.preventDefault();
-    storageService.bloquearHorario(bloqueioData, bloqueioInicio, bloqueioFim, bloqueioMotivo);
+    const bloqueio = storageService.bloquearHorario(bloqueioData, bloqueioInicio, bloqueioFim, bloqueioMotivo);
+    enviarAgendamentoRemoto(bloqueio.id);
     atualizarListaAgendamentos();
     setModalBloqueio(false);
   };

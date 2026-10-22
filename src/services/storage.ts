@@ -244,11 +244,30 @@ export const storageService = {
   },
 
   // Horários disponíveis
-  getHorariosDisponiveis(dataYYYYMMDD: string, duracaoMinutos: number): string[] {
+  getHorariosDisponiveis(
+    dataYYYYMMDD: string,
+    duracaoMinutos: number,
+    ocupadosExtras: Array<{ inicio: string; fim: string }> = []
+  ): string[] {
+    return this.getGradeHorarios(dataYYYYMMDD, duracaoMinutos, ocupadosExtras)
+      .filter((s) => s.livre)
+      .map((s) => s.hora);
+  },
+
+  // Todos os horários do dia dentro do expediente, marcando quais estão livres.
+  // `ocupadosExtras` traz os horários ocupados vindos do Supabase (outros aparelhos).
+  getGradeHorarios(
+    dataYYYYMMDD: string,
+    duracaoMinutos: number,
+    ocupadosExtras: Array<{ inicio: string; fim: string }> = []
+  ): Array<{ hora: string; livre: boolean }> {
     const config = this.getConfig();
-    const agendamentos = this.getAgendamentos().filter(
-      (a) => a.status !== 'cancelado' && dataLocalDeISO(a.inicio) === dataYYYYMMDD
-    );
+    const agendamentos: Array<{ inicio: string; fim: string }> = [
+      ...this.getAgendamentos().filter(
+        (a) => a.status !== 'cancelado' && dataLocalDeISO(a.inicio) === dataYYYYMMDD
+      ),
+      ...ocupadosExtras,
+    ];
 
     const [horaAbre, minAbre] = config.hora_abertura.split(':').map(Number);
     const [horaFecha, minFecha] = config.hora_fechamento.split(':').map(Number);
@@ -269,7 +288,7 @@ export const storageService = {
       almocoFimMin = hAlmocoFecha * 60 + mAlmocoFecha;
     }
 
-    const horariosLivres: string[] = [];
+    const grade: Array<{ hora: string; livre: boolean }> = [];
 
     // Se for o dia de hoje, não permitir horários do passado
     const hojeYYYYMMDD = dataLocalISO();
@@ -300,14 +319,12 @@ export const storageService = {
         return slotInicioDate < agFim && slotFimDate > agInicio;
       });
 
-      if (!temConflito) {
-        const hh = String(Math.floor(slot / 60)).padStart(2, '0');
-        const mm = String(slot % 60).padStart(2, '0');
-        horariosLivres.push(`${hh}:${mm}`);
-      }
+      const hh = String(Math.floor(slot / 60)).padStart(2, '0');
+      const mm = String(slot % 60).padStart(2, '0');
+      grade.push({ hora: `${hh}:${mm}`, livre: !temConflito });
     }
 
-    return horariosLivres;
+    return grade;
   },
 
   // ==========================================
