@@ -66,15 +66,6 @@ export const Header: React.FC<HeaderProps> = ({ config, modoAtual, setModoAtual 
             <Phone className="h-3.5 w-3.5 text-[#cf9b56]" />
             {config.telefone_whatsapp}
           </span>
-          <span className="hidden sm:inline">•</span>
-          <span className="text-[#e3b976] font-semibold">
-            {config.hora_abertura} às {config.hora_fechamento}
-            {(config.pausa_almoco ?? true) && config.almoco_inicio && config.almoco_fim && (
-              <span className="text-[#b9ac9c] font-normal ml-1">
-                (Almoço: {config.almoco_inicio} - {config.almoco_fim})
-              </span>
-            )}
-          </span>
         </div>
       </div>
     </header>

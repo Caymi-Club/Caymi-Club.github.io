@@ -17,6 +17,7 @@ import {
 import { Servico, ConfiguracoesBarbearia } from '../types';
 import { storageService } from '../services/storage';
 import { linkWhatsapp } from '../utils/whatsapp';
+import { dataLocalISO } from '../utils/datas';
 import { enviarAvisoAgendamento } from '../services/supabaseService';
 
 interface BookingFlowProps {
@@ -53,10 +54,10 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
   const carrosselRef = useRef<HTMLDivElement>(null);
 
   // Define default date range (today up to 30 days ahead)
-  const hojeStr = new Date().toISOString().slice(0, 10);
+  const hojeStr = dataLocalISO();
   const maxDate = new Date();
   maxDate.setDate(maxDate.getDate() + 30);
-  const maxDateStr = maxDate.toISOString().slice(0, 10);
+  const maxDateStr = dataLocalISO(maxDate);
 
   // Load saved client name and phone from localStorage
   useEffect(() => {
@@ -333,7 +334,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
           {(() => {
             const amanhad = new Date();
             amanhad.setDate(amanhad.getDate() + 1);
-            const amanhaStr = amanhad.toISOString().slice(0, 10);
+            const amanhaStr = dataLocalISO(amanhad);
             return (
               <button
                 type="button"

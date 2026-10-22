@@ -38,6 +38,7 @@ import { storageService } from '../services/storage';
 import { testSupabaseConnection } from '../services/supabaseService';
 import { PerformanceChart } from './PerformanceChart';
 import { linkWhatsapp } from '../utils/whatsapp';
+import { dataLocalISO, dataLocalDeISO, mesLocalISO } from '../utils/datas';
 
 interface AdminPanelProps {
   config: ConfiguracoesBarbearia;
@@ -77,19 +78,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [duracaoEditada, setDuracaoEditada] = useState<number>(30);
 
   // Agenda states
-  const [dataAgenda, setDataAgenda] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [dataAgenda, setDataAgenda] = useState<string>(dataLocalISO());
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>(() => storageService.getAgendamentos());
 
   // Block time modal
   const [modalBloqueio, setModalBloqueio] = useState(false);
-  const [bloqueioData, setBloqueioData] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [bloqueioData, setBloqueioData] = useState<string>(dataLocalISO());
   const [bloqueioInicio, setBloqueioInicio] = useState('12:00');
   const [bloqueioFim, setBloqueioFim] = useState('13:00');
   const [bloqueioMotivo, setBloqueioMotivo] = useState('Almoço / Intervalo');
 
   // Reschedule modal
   const [modalRemarcar, setModalRemarcar] = useState<Agendamento | null>(null);
-  const [remarcarData, setRemarcarData] = useState(new Date().toISOString().slice(0, 10));
+  const [remarcarData, setRemarcarData] = useState(dataLocalISO());
   const [remarcarHora, setRemarcarHora] = useState('');
   const [horariosRemarcar, setHorariosRemarcar] = useState<string[]>([]);
 
@@ -101,8 +102,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [avisoAcao, setAvisoAcao] = useState<{ texto: string; linkWhats?: string } | null>(null);
 
   // Caixa dates
-  const [dataCaixaDiario, setDataCaixaDiario] = useState<string>(new Date().toISOString().slice(0, 10));
-  const [mesCaixa, setMesCaixa] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [dataCaixaDiario, setDataCaixaDiario] = useState<string>(dataLocalISO());
+  const [mesCaixa, setMesCaixa] = useState<string>(mesLocalISO());
 
   // Telegram simulation
   const [simulacaoNotif, setSimulacaoNotif] = useState<string | null>(null);
@@ -121,7 +122,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const formatarDataBR = (dataISO: string) => {
     if (!dataISO) return '';
-    const [ano, mes, dia] = dataISO.slice(0, 10).split('-');
+    // Instante completo (ex.: início do agendamento) vira a data local; "YYYY-MM-DD" é usada como está
+    const somenteData = dataISO.length > 10 ? dataLocalDeISO(dataISO) : dataISO;
+    const [ano, mes, dia] = somenteData.split('-');
     return `${dia}/${mes}/${ano}`;
   };
 
@@ -225,7 +228,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Open Reschedule Modal
   const handleAbrirRemarcar = (ag: Agendamento) => {
-    const dataInicial = ag.inicio.slice(0, 10);
+    const dataInicial = dataLocalDeISO(ag.inicio);
     setModalRemarcar(ag);
     setRemarcarData(dataInicial);
     setRemarcarHora(formatarHora(ag.inicio));
@@ -341,7 +344,7 @@ export default {
 
   // Filtered appointments for agenda view
   const agendamentosFiltrados = agendamentos.filter(
-    (a) => a.inicio.slice(0, 10) === dataAgenda
+    (a) => dataLocalDeISO(a.inicio) === dataAgenda
   );
 
   // Caixa calculations

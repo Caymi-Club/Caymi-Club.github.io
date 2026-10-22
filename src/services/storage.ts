@@ -1,5 +1,6 @@
 import { Servico, Agendamento, ConfiguracoesBarbearia, UltimoAgendamentoCliente, FormaPagamento } from '../types';
 import { DEFAULT_CONFIG, DEFAULT_SERVICOS } from '../constants/defaultData';
+import { dataLocalISO, dataLocalDeISO, mesLocalISO } from '../utils/datas';
 
 const STORAGE_KEYS = {
   CONFIG: 'caymi_configuracoes',
@@ -246,7 +247,7 @@ export const storageService = {
   getHorariosDisponiveis(dataYYYYMMDD: string, duracaoMinutos: number): string[] {
     const config = this.getConfig();
     const agendamentos = this.getAgendamentos().filter(
-      (a) => a.status !== 'cancelado' && a.inicio.slice(0, 10) === dataYYYYMMDD
+      (a) => a.status !== 'cancelado' && dataLocalDeISO(a.inicio) === dataYYYYMMDD
     );
 
     const [horaAbre, minAbre] = config.hora_abertura.split(':').map(Number);
@@ -271,7 +272,7 @@ export const storageService = {
     const horariosLivres: string[] = [];
 
     // Se for o dia de hoje, não permitir horários do passado
-    const hojeYYYYMMDD = new Date().toISOString().slice(0, 10);
+    const hojeYYYYMMDD = dataLocalISO();
     const isHoje = dataYYYYMMDD === hojeYYYYMMDD;
     const agora = new Date();
     const minutosAgora = agora.getHours() * 60 + agora.getMinutes() + 10;
@@ -315,7 +316,7 @@ export const storageService = {
   getCaixaDiario(dataYYYYMMDD: string) {
     const todos = this.getAgendamentos();
     const diaAgendamentos = todos.filter(
-      (a) => a.inicio.slice(0, 10) === dataYYYYMMDD && a.status !== 'cancelado' && a.status !== 'bloqueado'
+      (a) => dataLocalDeISO(a.inicio) === dataYYYYMMDD && a.status !== 'cancelado' && a.status !== 'bloqueado'
     );
 
     let totalEntradas = 0;
@@ -374,11 +375,11 @@ export const storageService = {
     for (let i = 6; i >= 0; i--) {
       const d = new Date(ref);
       d.setDate(d.getDate() - i);
-      const dataISO = d.toISOString().slice(0, 10);
+      const dataISO = dataLocalISO(d);
       const diaSemana = nomesDias[d.getDay()];
 
       const doDia = todos.filter(
-        (a) => a.inicio.slice(0, 10) === dataISO && a.status !== 'cancelado' && a.status !== 'bloqueado'
+        (a) => dataLocalDeISO(a.inicio) === dataISO && a.status !== 'cancelado' && a.status !== 'bloqueado'
       );
 
       const totalDia = doDia.reduce((acc, a) => acc + (a.pago || a.status === 'concluido' ? Number(a.preco_total) || 0 : 0), 0);
@@ -405,10 +406,10 @@ export const storageService = {
 
   getCaixaMensal(anoMes?: string) {
     const todos = this.getAgendamentos();
-    const prefix = anoMes || new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+    const prefix = anoMes || mesLocalISO(); // 'YYYY-MM'
 
     const mesAgendamentos = todos.filter(
-      (a) => a.inicio.slice(0, 7) === prefix && a.status !== 'cancelado' && a.status !== 'bloqueado'
+      (a) => dataLocalDeISO(a.inicio).slice(0, 7) === prefix && a.status !== 'cancelado' && a.status !== 'bloqueado'
     );
 
     let totalMensal = 0;
@@ -466,7 +467,7 @@ export const storageService = {
 
     const porDia: Record<string, { recebido: number; pendente: number; quantidade: number }> = {};
     todos.forEach((a) => {
-      const chave = a.inicio.slice(0, 10);
+      const chave = dataLocalDeISO(a.inicio);
       if (!porDia[chave]) porDia[chave] = { recebido: 0, pendente: 0, quantidade: 0 };
       const preco = Number(a.preco_total) || 0;
       if (a.pago || a.status === 'concluido') {
@@ -483,7 +484,7 @@ export const storageService = {
       for (let i = dias - 1; i >= 0; i--) {
         const d = new Date(hoje);
         d.setDate(d.getDate() - i - deslocamento);
-        const data = d.toISOString().slice(0, 10);
+        const data = dataLocalISO(d);
         serie.push({ data, diaSemana: nomesDias[d.getDay()], ...(porDia[data] || { recebido: 0, pendente: 0, quantidade: 0 }) });
       }
       return serie;
