@@ -37,6 +37,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
   const [grade, setGrade] = useState<Array<{ hora: string; livre: boolean }>>([]);
   const [carregandoHorarios, setCarregandoHorarios] = useState(false);
   const [versaoHorarios, setVersaoHorarios] = useState(0);
+  const [semConexaoHorarios, setSemConexaoHorarios] = useState(false);
 
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
@@ -88,8 +89,9 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
 
     buscarHorariosOcupados(config, dataSelecionada).then((ocupados) => {
       if (cancelado) return;
-      const slots = storageService.getGradeHorarios(dataSelecionada, duracaoTotal, ocupados || []);
+      const slots = storageService.getGradeHorarios(dataSelecionada, duracaoTotal, ocupados);
       setGrade(slots);
+      setSemConexaoHorarios(ocupados === null);
       setCarregandoHorarios(false);
 
       // If previously selected time is no longer free, clear it
@@ -171,8 +173,12 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
 
       // Confere de novo no Supabase: outro cliente pode ter pegado o horário enquanto este preenchia os dados
       const ocupados = await buscarHorariosOcupados(config, dataSelecionada);
+      if (ocupados === null) {
+        setErro('Não foi possível verificar os horários agora. Verifique sua internet e tente novamente.');
+        return;
+      }
       const aindaLivre = storageService
-        .getHorariosDisponiveis(dataSelecionada, duracao, ocupados || [])
+        .getHorariosDisponiveis(dataSelecionada, duracao, ocupados)
         .includes(horaSelecionada);
       if (!aindaLivre) {
         setErro('Esse horário acabou de ser ocupado. Escolha outro horário.');
@@ -203,7 +209,13 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
       const remoto = await registrarAgendamentoRemoto(config, novoAg);
       if (!remoto.success) {
         storageService.atualizarAgendamento(novoAg.id, { status: 'cancelado' });
-        setErro('Não foi possível confirmar o agendamento agora. Verifique sua internet e tente novamente.');
+        if (remoto.message?.includes('horario_ocupado')) {
+          setErro('Esse horário acabou de ser ocupado. Escolha outro horário.');
+          setHoraSelecionada('');
+          setVersaoHorarios((v) => v + 1);
+        } else {
+          setErro('Não foi possível confirmar o agendamento agora. Verifique sua internet e tente novamente.');
+        }
         return;
       }
 
@@ -436,6 +448,11 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
                   );
                 })}
               </div>
+              {semConexaoHorarios && (
+                <p className="mt-2 text-[11px] text-red-300">
+                  Não foi possível consultar os horários marcados. Os horários abaixo podem estar desatualizados.
+                </p>
+              )}
               {grade.some((s) => !s.livre) && (
                 <p className="mt-2 text-[11px] text-[#b9ac9c]">Horários riscados já estão marcados.</p>
               )}

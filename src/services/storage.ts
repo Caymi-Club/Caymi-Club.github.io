@@ -10,73 +10,6 @@ const STORAGE_KEYS = {
   ULTIMO_AGENDAMENTO: 'caymi_ultimo_agendamento',
 };
 
-// Seed initial bookings for demonstration so the agenda & faturamento have realistic data
-const getInitialAgendamentos = (): Agendamento[] => {
-  const hoje = new Date();
-  const formatISO = (d: Date, hora: number, minuto: number) => {
-    const copy = new Date(d);
-    copy.setHours(hora, minuto, 0, 0);
-    return copy.toISOString();
-  };
-
-  return [
-    {
-      id: 'ag-01',
-      cliente_nome: 'Marcos Vinícius',
-      cliente_telefone: '(35) 99876-5432',
-      inicio: formatISO(hoje, 9, 0),
-      fim: formatISO(hoje, 10, 0),
-      servicos: ['Corte + Barba'],
-      preco_total: 55.0,
-      duracao_total_minutos: 60,
-      status: 'concluido',
-      pago: true,
-      forma_pagamento: 'Pix',
-      criado_em: new Date().toISOString(),
-    },
-    {
-      id: 'ag-02',
-      cliente_nome: 'Lucas Silva',
-      cliente_telefone: '(35) 99123-4567',
-      inicio: formatISO(hoje, 10, 30),
-      fim: formatISO(hoje, 11, 0),
-      servicos: ['Corte Tradicional'],
-      preco_total: 35.0,
-      duracao_total_minutos: 30,
-      status: 'confirmado',
-      pago: false,
-      forma_pagamento: 'Pendente',
-      criado_em: new Date().toISOString(),
-    },
-    {
-      id: 'ag-03',
-      cliente_nome: 'Intervalo / Almoço',
-      cliente_telefone: '-',
-      inicio: formatISO(hoje, 12, 0),
-      fim: formatISO(hoje, 13, 0),
-      servicos: [],
-      preco_total: 0,
-      duracao_total_minutos: 60,
-      status: 'bloqueado',
-      criado_em: new Date().toISOString(),
-    },
-    {
-      id: 'ag-04',
-      cliente_nome: 'Rodrigo Alves',
-      cliente_telefone: '(35) 98844-1122',
-      inicio: formatISO(hoje, 14, 0),
-      fim: formatISO(hoje, 14, 30),
-      servicos: ['Barba Terapia'],
-      preco_total: 25.0,
-      duracao_total_minutos: 30,
-      status: 'confirmado',
-      pago: true,
-      forma_pagamento: 'Dinheiro',
-      criado_em: new Date().toISOString(),
-    },
-  ];
-};
-
 export const storageService = {
   // Configurações
   getConfig(): ConfiguracoesBarbearia {
@@ -127,9 +60,7 @@ export const storageService = {
     } catch (e) {
       console.warn('Erro ao carregar agendamentos do localStorage:', e);
     }
-    const initial = getInitialAgendamentos();
-    this.saveAgendamentos(initial);
-    return initial;
+    return [];
   },
 
   saveAgendamentos(agendamentos: Agendamento[]): void {
@@ -247,27 +178,28 @@ export const storageService = {
   getHorariosDisponiveis(
     dataYYYYMMDD: string,
     duracaoMinutos: number,
-    ocupadosExtras: Array<{ inicio: string; fim: string }> = []
+    ocupadosRemotos: Array<{ inicio: string; fim: string }> | null = null
   ): string[] {
-    return this.getGradeHorarios(dataYYYYMMDD, duracaoMinutos, ocupadosExtras)
+    return this.getGradeHorarios(dataYYYYMMDD, duracaoMinutos, ocupadosRemotos)
       .filter((s) => s.livre)
       .map((s) => s.hora);
   },
 
   // Todos os horários do dia dentro do expediente, marcando quais estão livres.
-  // `ocupadosExtras` traz os horários ocupados vindos do Supabase (outros aparelhos).
+  // `ocupadosRemotos` são os horários ocupados vindos do Supabase (todos os aparelhos). Quando vierem,
+  // valem sozinhos: a cópia local pode estar desatualizada (ex.: o barbeiro cancelou pelo celular dele).
+  // Com null (sem conexão), usa só o que há neste aparelho.
   getGradeHorarios(
     dataYYYYMMDD: string,
     duracaoMinutos: number,
-    ocupadosExtras: Array<{ inicio: string; fim: string }> = []
+    ocupadosRemotos: Array<{ inicio: string; fim: string }> | null = null
   ): Array<{ hora: string; livre: boolean }> {
     const config = this.getConfig();
-    const agendamentos: Array<{ inicio: string; fim: string }> = [
-      ...this.getAgendamentos().filter(
+    const agendamentos: Array<{ inicio: string; fim: string }> =
+      ocupadosRemotos ??
+      this.getAgendamentos().filter(
         (a) => a.status !== 'cancelado' && dataLocalDeISO(a.inicio) === dataYYYYMMDD
-      ),
-      ...ocupadosExtras,
-    ];
+      );
 
     const [horaAbre, minAbre] = config.hora_abertura.split(':').map(Number);
     const [horaFecha, minFecha] = config.hora_fechamento.split(':').map(Number);
