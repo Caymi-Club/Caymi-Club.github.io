@@ -11,7 +11,13 @@ import { BookingFlow } from './components/BookingFlow';
 import { AdminPanel } from './components/AdminPanel';
 import { AdminAuthModal } from './components/AdminAuthModal';
 import { storageService } from './services/storage';
-import { sincronizarServicos, adminTemSessao, observarSessaoAdmin, logoutAdmin } from './services/supabaseService';
+import {
+  sincronizarServicos,
+  adminTemSessao,
+  observarSessaoAdmin,
+  logoutAdmin,
+  buscarConfigSite,
+} from './services/supabaseService';
 import { ConfiguracoesBarbearia, Servico, UltimoAgendamentoCliente } from './types';
 import { Lock } from 'lucide-react';
 
@@ -36,6 +42,20 @@ export default function App() {
       }
     }
     init();
+  }, [config.supabase_url, config.supabase_anon_key]);
+
+  // Configurações publicadas pelo barbeiro (nome, telefone, horários etc.): valem para todos os aparelhos
+  useEffect(() => {
+    let ativo = true;
+    buscarConfigSite(config).then((publicadas) => {
+      if (!ativo || !publicadas) return;
+      const novaConfig = { ...storageService.getConfig(), ...publicadas };
+      storageService.saveConfig(novaConfig);
+      setConfig(novaConfig);
+    });
+    return () => {
+      ativo = false;
+    };
   }, [config.supabase_url, config.supabase_anon_key]);
 
   const handleConfigChange = (novaConfig: ConfiguracoesBarbearia) => {

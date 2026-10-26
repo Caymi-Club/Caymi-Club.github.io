@@ -221,7 +221,7 @@ export async function salvarAgendamentoRemoto(
 // `mudou` indica que a lista local foi alterada; `erro` traz o motivo se algo não pôde ser sincronizado.
 export async function sincronizarAgendamentosAdmin(
   config: ConfiguracoesBarbearia
-): Promise<{ mudou: boolean; erro?: string }> {
+): Promise<{ mudou: boolean; erro?: string; total?: number }> {
   const client = getSupabaseClient(config);
   if (!client) return { mudou: false, erro: 'Supabase não configurado.' };
 
@@ -256,10 +256,131 @@ export async function sincronizarAgendamentosAdmin(
       JSON.stringify(lista.map((a) => [a.id, a.status, a.inicio, a.pago, a.forma_pagamento]).sort());
     const mudou = assinatura(final) !== assinatura(locais);
     if (mudou) storageService.saveAgendamentos(final);
-    return { mudou, erro };
+    return { mudou, erro, total: remotos.length };
   } catch (err: any) {
     console.warn('Falha ao sincronizar agendamentos:', err);
     return { mudou: false, erro: err.message || String(err) };
+  }
+}
+
+// Dados da barbearia que os clientes precisam ver. As chaves do Supabase e do Telegram ficam de fora.
+const CAMPOS_PUBLICOS = [
+  'nome',
+  'slogan',
+  'endereco',
+  'telefone_whatsapp',
+  'hora_abertura',
+  'hora_fechamento',
+  'pausa_almoco',
+  'almoco_inicio',
+  'almoco_fim',
+  'intervalo_minutos',
+  'exibir_promo_app',
+  'promo_app_nome',
+  'promo_app_badge',
+  'promo_app_desc',
+  'promo_app_url',
+] as const;
+
+function camposPublicos(origem: Partial<ConfiguracoesBarbearia>): Partial<ConfiguracoesBarbearia> {
+  const resultado: Record<string, unknown> = {};
+  for (const campo of CAMPOS_PUBLICOS) {
+    if (origem[campo] !== undefined) resultado[campo] = origem[campo];
+  }
+  return resultado as Partial<ConfiguracoesBarbearia>;
+}
+
+// Todos: configurações publicadas pelo barbeiro. null = não publicadas ou sem conexão.
+export async function buscarConfigSite(
+  config: ConfiguracoesBarbearia
+): Promise<Partial<ConfiguracoesBarbearia> | null> {
+  const client = getSupabaseClient(config);
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client.from('config_site').select('dados').eq('id', 1).maybeSingle();
+    if (error || !data?.dados) {
+      if (error) console.warn('Não foi possível carregar as configurações do site:', error.message);
+      return null;
+    }
+    return camposPublicos(data.dados as Partial<ConfiguracoesBarbearia>);
+  } catch (err) {
+    console.warn('Falha ao carregar as configurações do site:', err);
+    return null;
+  }
+}
+
+// Barbeiro: publica as configurações para os clientes (exige login).
+export async function salvarConfigSite(
+  config: ConfiguracoesBarbearia
+): Promise<{ success: boolean; message?: string }> {
+  const client = getSupabaseClient(config);
+  if (!client) return { success: false, message: 'Supabase não configurado.' };
+
+  try {
+    const { error } = await client
+      .from('config_site')
+      .upsert({ id: 1, dados: camposPublicos(config), atualizado_em: new Date().toISOString() });
+    if (error) return { success: false, message: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+// Barbeiro: se as configurações ainda não foram publicadas, publica as deste computador.
+export async function publicarConfigSiteSeAusente(
+  config: ConfiguracoesBarbearia
+): Promise<{ success: boolean; message?: string }> {
+  const client = getSupabaseClient(config);
+  if (!client) return { success: false, message: 'Supabase não configurado.' };
+
+  try {
+    const { data, error } = await client.from('config_site').select('id').eq('id', 1).maybeSingle();
+    if (error) return { success: false, message: error.message };
+    if (data) return { success: true };
+    return await salvarConfigSite(config);
+  } catch (err: any) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+// Barbeiro: grava/atualiza os serviços (preço, duração, ativo) para os clientes enxergarem.
+export async function salvarServicosRemoto(
+  config: ConfiguracoesBarbearia,
+  servicos: Servico[]
+): Promise<{ success: boolean; message?: string }> {
+  const client = getSupabaseClient(config);
+  if (!client) return { success: false, message: 'Supabase não configurado.' };
+
+  try {
+    const linhas = servicos.map((s) => ({
+      nome: s.nome,
+      preco: Number(s.preco) || 0,
+      duracao_minutos: Number(s.duracao_minutos) || 30,
+      ativo: s.ativo !== false,
+    }));
+    const { error } = await client.from('servicos').upsert(linhas, { onConflict: 'nome' });
+    if (error) return { success: false, message: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+export async function excluirServicoRemoto(
+  config: ConfiguracoesBarbearia,
+  nome: string
+): Promise<{ success: boolean; message?: string }> {
+  const client = getSupabaseClient(config);
+  if (!client) return { success: false, message: 'Supabase não configurado.' };
+
+  try {
+    const { error } = await client.from('servicos').delete().eq('nome', nome);
+    if (error) return { success: false, message: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, message: err.message || String(err) };
   }
 }
 

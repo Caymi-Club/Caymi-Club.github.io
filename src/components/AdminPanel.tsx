@@ -35,7 +35,16 @@ import {
 } from 'lucide-react';
 import { Servico, Agendamento, ConfiguracoesBarbearia, FormaPagamento } from '../types';
 import { storageService } from '../services/storage';
-import { testSupabaseConnection, salvarAgendamentoRemoto, sincronizarAgendamentosAdmin } from '../services/supabaseService';
+import {
+  testSupabaseConnection,
+  salvarAgendamentoRemoto,
+  sincronizarAgendamentosAdmin,
+  salvarConfigSite,
+  publicarConfigSiteSeAusente,
+  sincronizarServicos,
+  salvarServicosRemoto,
+  excluirServicoRemoto,
+} from '../services/supabaseService';
 import { PerformanceChart } from './PerformanceChart';
 import { linkWhatsapp } from '../utils/whatsapp';
 import { dataLocalISO, dataLocalDeISO, mesLocalISO } from '../utils/datas';
@@ -100,6 +109,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Notification / Cancel feedback
   const [erroSincronizacao, setErroSincronizacao] = useState<string | null>(null);
+  const [ultimaSincronizacao, setUltimaSincronizacao] = useState<string | null>(null);
   const [avisoAcao, setAvisoAcao] = useState<{ texto: string; linkWhats?: string } | null>(null);
 
   // Caixa dates
@@ -143,10 +153,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   useEffect(() => {
     let ativo = true;
     const sincronizar = async () => {
-      const { mudou, erro } = await sincronizarAgendamentosAdmin(config);
+      const { mudou, erro, total } = await sincronizarAgendamentosAdmin(config);
+      const horario = await publicarConfigSiteSeAusente(storageService.getConfig());
       if (!ativo) return;
       if (mudou) atualizarListaAgendamentos();
-      setErroSincronizacao(erro || null);
+      const problema = erro || (horario.success ? null : horario.message || 'erro ao publicar as configurações');
+      setErroSincronizacao(problema);
+      if (!problema) {
+        const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        setUltimaSincronizacao(`${hora} · ${total ?? 0} registros no servidor`);
+      }
     };
     sincronizar();
     const timer = setInterval(sincronizar, 30000);
@@ -164,11 +180,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setErroSincronizacao(res.success ? null : res.message || 'erro desconhecido');
   };
 
+  // Traz a lista completa de serviços (inclusive os desativados) ao abrir o painel
+  useEffect(() => {
+    sincronizarServicos(config).then(onServicosChange);
+  }, [config.supabase_url, config.supabase_anon_key]);
+
+  // Publica os serviços para os clientes (preço, duração, ativo)
+  const publicarServicos = (lista: Servico[]) => {
+    void salvarServicosRemoto(config, lista).then((res) => {
+      setErroSincronizacao(res.success ? null : `serviços não publicados para os clientes: ${res.message}`);
+    });
+  };
+
   // Save General Configuration
   const handleSalvarConfig = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     storageService.saveConfig(formData);
     onConfigChange(formData);
+    void salvarConfigSite(formData).then((res) => {
+      setErroSincronizacao(res.success ? null : `configurações não publicadas para os clientes: ${res.message}`);
+    });
     setMensagemSalvo(true);
     setTimeout(() => setMensagemSalvo(false), 3000);
   };
@@ -191,6 +222,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const atualizados = [...servicos, novo];
     onServicosChange(atualizados);
     storageService.saveServicos(atualizados);
+    publicarServicos(atualizados);
 
     setNovoNome('');
     setNovoPreco('35');
@@ -214,6 +246,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
     onServicosChange(atualizados);
     storageService.saveServicos(atualizados);
+    publicarServicos(atualizados);
     setServicoEditando(null);
   };
 
@@ -224,6 +257,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     );
     onServicosChange(atualizados);
     storageService.saveServicos(atualizados);
+    publicarServicos(atualizados);
   };
 
   // Delete Service
@@ -232,6 +266,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       const atualizados = servicos.filter((s) => s.nome !== nome);
       onServicosChange(atualizados);
       storageService.saveServicos(atualizados);
+      void excluirServicoRemoto(config, nome).then((res) => {
+        setErroSincronizacao(res.success ? null : `serviço não excluído para os clientes: ${res.message}`);
+      });
     }
   };
 
@@ -421,6 +458,10 @@ export default {
           )}
         </div>
       </div>
+
+      {!erroSincronizacao && ultimaSincronizacao && (
+        <p className="text-[11px] text-[#b9ac9c]">Sincronizado com os clientes às {ultimaSincronizacao}</p>
+      )}
 
       {erroSincronizacao && (
         <div className="rounded-xl border border-red-800 bg-red-950/60 p-3 text-xs text-red-200">
