@@ -99,6 +99,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [formaEscolhida, setFormaEscolhida] = useState<FormaPagamento>('Pix');
 
   // Notification / Cancel feedback
+  const [erroSincronizacao, setErroSincronizacao] = useState<string | null>(null);
   const [avisoAcao, setAvisoAcao] = useState<{ texto: string; linkWhats?: string } | null>(null);
 
   // Caixa dates
@@ -142,8 +143,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   useEffect(() => {
     let ativo = true;
     const sincronizar = async () => {
-      const mudou = await sincronizarAgendamentosAdmin(config);
-      if (ativo && mudou) atualizarListaAgendamentos();
+      const { mudou, erro } = await sincronizarAgendamentosAdmin(config);
+      if (!ativo) return;
+      if (mudou) atualizarListaAgendamentos();
+      setErroSincronizacao(erro || null);
     };
     sincronizar();
     const timer = setInterval(sincronizar, 30000);
@@ -154,9 +157,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   }, [config.supabase_url, config.supabase_anon_key]);
 
   // Envia ao Supabase a versão atual do agendamento para o horário refletir nos celulares dos clientes
-  const enviarAgendamentoRemoto = (id: string) => {
+  const enviarAgendamentoRemoto = async (id: string) => {
     const ag = storageService.getAgendamentos().find((a) => a.id === id);
-    if (ag) void salvarAgendamentoRemoto(config, ag);
+    if (!ag) return;
+    const res = await salvarAgendamentoRemoto(config, ag);
+    setErroSincronizacao(res.success ? null : res.message || 'erro desconhecido');
   };
 
   // Save General Configuration
@@ -416,6 +421,13 @@ export default {
           )}
         </div>
       </div>
+
+      {erroSincronizacao && (
+        <div className="rounded-xl border border-red-800 bg-red-950/60 p-3 text-xs text-red-200">
+          Atenção: nem tudo foi enviado aos clientes. Os horários que você bloqueou ou alterou podem estar só neste
+          computador. Tentando de novo a cada 30s. Motivo: {erroSincronizacao}
+        </div>
+      )}
 
       {/* Action feedback alert (e.g. after cancel/reschedule with WhatsApp button) */}
       {avisoAcao && (

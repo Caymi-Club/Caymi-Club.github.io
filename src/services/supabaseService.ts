@@ -196,45 +196,57 @@ export async function buscarHorariosOcupados(
 }
 
 // Barbeiro: cria/atualiza um agendamento ou bloqueio no Supabase (exige login).
-export async function salvarAgendamentoRemoto(config: ConfiguracoesBarbearia, ag: Agendamento): Promise<boolean> {
+export async function salvarAgendamentoRemoto(
+  config: ConfiguracoesBarbearia,
+  ag: Agendamento
+): Promise<{ success: boolean; message?: string }> {
   const client = getSupabaseClient(config);
-  if (!client) return false;
+  if (!client) return { success: false, message: 'Supabase não configurado.' };
 
   try {
     const { error } = await client.from('agendamentos_site').upsert(agendamentoParaLinha(ag));
     if (error) {
       console.warn('Não foi possível salvar o agendamento no Supabase:', error.message);
-      return false;
+      return { success: false, message: error.message };
     }
-    return true;
-  } catch (err) {
+    return { success: true };
+  } catch (err: any) {
     console.warn('Falha ao salvar o agendamento no Supabase:', err);
-    return false;
+    return { success: false, message: err.message || String(err) };
   }
 }
 
 // Barbeiro: traz para este aparelho os agendamentos feitos pelos clientes (e por outros aparelhos)
-// e envia ao Supabase o que só existe aqui. Retorna true se a lista local mudou.
-export async function sincronizarAgendamentosAdmin(config: ConfiguracoesBarbearia): Promise<boolean> {
+// e envia ao Supabase o que só existe aqui (ex.: bloqueios que não chegaram a subir).
+// `mudou` indica que a lista local foi alterada; `erro` traz o motivo se algo não pôde ser sincronizado.
+export async function sincronizarAgendamentosAdmin(
+  config: ConfiguracoesBarbearia
+): Promise<{ mudou: boolean; erro?: string }> {
   const client = getSupabaseClient(config);
-  if (!client) return false;
+  if (!client) return { mudou: false, erro: 'Supabase não configurado.' };
 
   try {
     const { data, error } = await client.from('agendamentos_site').select('*');
     if (error || !data) {
       if (error) console.warn('Não foi possível carregar agendamentos do Supabase:', error.message);
-      return false;
+      return { mudou: false, erro: error?.message || 'Sem resposta do Supabase.' };
     }
 
     const remotos = data.map(linhaParaAgendamento);
     const idsRemotos = new Set(remotos.map((r) => r.id));
     const locais = storageService.getAgendamentos();
 
-    // Dados de demonstração do primeiro acesso não devem bloquear horários reais
+    // Dados de demonstração antigos não devem bloquear horários reais
     const soLocais = locais.filter((l) => !idsRemotos.has(l.id) && !/^ag-0[1-4]$/.test(l.id));
-    if (soLocais.length > 0) {
-      const { error: erroEnvio } = await client.from('agendamentos_site').upsert(soLocais.map(agendamentoParaLinha));
-      if (erroEnvio) console.warn('Não foi possível enviar agendamentos locais:', erroEnvio.message);
+
+    // Um por um: se o banco recusar um registro antigo, os demais (ex.: bloqueios) continuam subindo
+    let erro: string | undefined;
+    for (const ag of soLocais) {
+      const { error: erroEnvio } = await client.from('agendamentos_site').upsert(agendamentoParaLinha(ag));
+      if (erroEnvio) {
+        console.warn('Não foi possível enviar agendamento local:', ag.id, erroEnvio.message);
+        erro = erroEnvio.message;
+      }
     }
 
     // O Supabase vale para o que existe nos dois lados; o que só existe aqui continua na lista local
@@ -244,10 +256,10 @@ export async function sincronizarAgendamentosAdmin(config: ConfiguracoesBarbeari
       JSON.stringify(lista.map((a) => [a.id, a.status, a.inicio, a.pago, a.forma_pagamento]).sort());
     const mudou = assinatura(final) !== assinatura(locais);
     if (mudou) storageService.saveAgendamentos(final);
-    return mudou;
-  } catch (err) {
+    return { mudou, erro };
+  } catch (err: any) {
     console.warn('Falha ao sincronizar agendamentos:', err);
-    return false;
+    return { mudou: false, erro: err.message || String(err) };
   }
 }
 
