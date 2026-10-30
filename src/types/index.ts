@@ -73,3 +73,15 @@ export interface ConfiguracoesBarbearia {
   telegram_bot_token?: string;
   telegram_chat_id?: string;
 }
+
+export interface Assinante {
+  id: string;
+  nome: string;
+  telefone: string;
+  plano: string;
+  valor: number;
+  dia_vencimento: number; // 1-31: dia do mês em que a mensalidade vence
+  proximo_vencimento: string; // YYYY-MM-DD
+  ultimo_pagamento?: string | null; // YYYY-MM-DD
+  ativo: boolean;
+}

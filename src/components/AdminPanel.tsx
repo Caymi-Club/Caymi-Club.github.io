@@ -46,6 +46,7 @@ import {
   excluirServicoRemoto,
 } from '../services/supabaseService';
 import { PerformanceChart } from './PerformanceChart';
+import { PlanoMensal } from './PlanoMensal';
 import { linkWhatsapp } from '../utils/whatsapp';
 import { dataLocalISO, dataLocalDeISO, mesLocalISO } from '../utils/datas';
 import { semanaDaConfig } from '../utils/horarios';
@@ -67,7 +68,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onVoltarAgendamento,
   onDeslogarAdmin,
 }) => {
-  const [abaAtiva, setAbaAtiva] = useState<'agenda' | 'caixa' | 'servicos' | 'dados' | 'telegram' | 'exportar'>('agenda');
+  const [abaAtiva, setAbaAtiva] = useState<'agenda' | 'caixa' | 'planos' | 'servicos' | 'dados' | 'telegram' | 'exportar'>('agenda');
   const [subAbaCaixa, setSubAbaCaixa] = useState<'diario' | 'semanal' | 'mensal' | 'desempenho'>('diario');
 
   // Form states for general settings
@@ -592,6 +593,7 @@ export default {
         {[
           { id: 'agenda', label: '📅 Agenda & Ações' },
           { id: 'caixa', label: '💰 Caixa (D/S/M)' },
+          { id: 'planos', label: '💳 Plano Mensal' },
           { id: 'servicos', label: '✂️ Serviços & Preços' },
           { id: 'dados', label: '⚙️ Barbearia & Horários' },
           { id: 'telegram', label: '🤖 Telegram & Banco' },
@@ -1534,6 +1536,8 @@ export default {
       {/* ======================================================== */}
       {/* ABA 3: SERVIÇOS & PREÇOS */}
       {/* ======================================================== */}
+      {abaAtiva === 'planos' && <PlanoMensal config={config} />}
+
       {abaAtiva === 'servicos' && (
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">

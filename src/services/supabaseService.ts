@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { ConfiguracoesBarbearia, Servico, Agendamento } from '../types';
+import { ConfiguracoesBarbearia, Servico, Agendamento, Assinante } from '../types';
 import { storageService } from './storage';
 
 let supabaseInstance: SupabaseClient | null = null;
@@ -379,6 +379,82 @@ export async function excluirServicoRemoto(
 
   try {
     const { error } = await client.from('servicos').delete().eq('nome', nome);
+    if (error) return { success: false, message: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+// ---- Plano mensal (assinantes) ----
+
+function linhaParaAssinante(r: any): Assinante {
+  return {
+    id: r.id,
+    nome: r.nome,
+    telefone: r.telefone || '',
+    plano: r.plano,
+    valor: Number(r.valor) || 0,
+    dia_vencimento: Number(r.dia_vencimento) || 1,
+    proximo_vencimento: r.proximo_vencimento,
+    ultimo_pagamento: r.ultimo_pagamento ?? null,
+    ativo: r.ativo !== false,
+  };
+}
+
+export async function listarAssinantes(
+  config: ConfiguracoesBarbearia
+): Promise<{ dados: Assinante[]; erro?: string }> {
+  const client = getSupabaseClient(config);
+  if (!client) return { dados: [], erro: 'Supabase não configurado.' };
+
+  try {
+    const { data, error } = await client
+      .from('assinantes')
+      .select('*')
+      .order('proximo_vencimento', { ascending: true });
+    if (error) return { dados: [], erro: error.message };
+    return { dados: (data || []).map(linhaParaAssinante) };
+  } catch (err: any) {
+    return { dados: [], erro: err.message || String(err) };
+  }
+}
+
+export async function salvarAssinante(
+  config: ConfiguracoesBarbearia,
+  a: Assinante
+): Promise<{ success: boolean; message?: string }> {
+  const client = getSupabaseClient(config);
+  if (!client) return { success: false, message: 'Supabase não configurado.' };
+
+  try {
+    const { error } = await client.from('assinantes').upsert({
+      id: a.id,
+      nome: a.nome,
+      telefone: a.telefone,
+      plano: a.plano,
+      valor: a.valor,
+      dia_vencimento: a.dia_vencimento,
+      proximo_vencimento: a.proximo_vencimento,
+      ultimo_pagamento: a.ultimo_pagamento ?? null,
+      ativo: a.ativo,
+    });
+    if (error) return { success: false, message: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+export async function excluirAssinante(
+  config: ConfiguracoesBarbearia,
+  id: string
+): Promise<{ success: boolean; message?: string }> {
+  const client = getSupabaseClient(config);
+  if (!client) return { success: false, message: 'Supabase não configurado.' };
+
+  try {
+    const { error } = await client.from('assinantes').delete().eq('id', id);
     if (error) return { success: false, message: error.message };
     return { success: true };
   } catch (err: any) {
