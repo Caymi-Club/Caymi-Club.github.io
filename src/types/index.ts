@@ -40,6 +40,16 @@ export interface UltimoAgendamentoCliente {
   lembreteAtivado?: boolean;
 }
 
+// Horário de um dia da semana (almoço/folga incluídos)
+export interface HorarioDia {
+  aberto: boolean;
+  abertura: string; // '08:00'
+  fechamento: string; // '19:00'
+  pausa_almoco: boolean;
+  almoco_inicio: string; // '12:00'
+  almoco_fim: string; // '13:00'
+}
+
 export interface ConfiguracoesBarbearia {
   nome: string;
   slogan: string;
@@ -52,6 +62,7 @@ export interface ConfiguracoesBarbearia {
   almoco_fim: string; // '13:00'
   intervalo_minutos: number; // 30
   dias_funcionamento: number[]; // 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sab
+  horarios_semana?: HorarioDia[]; // índice 0=Dom ... 6=Sáb; quando existe, vale no lugar dos horários gerais
   exibir_promo_app: boolean;
   promo_app_nome: string;
   promo_app_badge: string;

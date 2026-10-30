@@ -33,7 +33,7 @@ import {
   BellRing,
   LogOut,
 } from 'lucide-react';
-import { Servico, Agendamento, ConfiguracoesBarbearia, FormaPagamento } from '../types';
+import { Servico, Agendamento, ConfiguracoesBarbearia, FormaPagamento, HorarioDia } from '../types';
 import { storageService } from '../services/storage';
 import {
   testSupabaseConnection,
@@ -48,6 +48,7 @@ import {
 import { PerformanceChart } from './PerformanceChart';
 import { linkWhatsapp } from '../utils/whatsapp';
 import { dataLocalISO, dataLocalDeISO, mesLocalISO } from '../utils/datas';
+import { semanaDaConfig } from '../utils/horarios';
 
 interface AdminPanelProps {
   config: ConfiguracoesBarbearia;
@@ -98,6 +99,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [bloqueioMotivo, setBloqueioMotivo] = useState('Almoço / Intervalo');
 
   // Reschedule modal
+  // Editar serviços de um agendamento
+  const [modalServicos, setModalServicos] = useState<Agendamento | null>(null);
+  const [servicosEdit, setServicosEdit] = useState<string[]>([]);
+  const [precoEdit, setPrecoEdit] = useState('0');
+  const [duracaoEdit, setDuracaoEdit] = useState(30);
+  const [avulsoNome, setAvulsoNome] = useState('');
+  const [avulsoPreco, setAvulsoPreco] = useState('');
+  const [avulsoMinutos, setAvulsoMinutos] = useState('0');
+
   const [modalRemarcar, setModalRemarcar] = useState<Agendamento | null>(null);
   const [remarcarData, setRemarcarData] = useState(dataLocalISO());
   const [remarcarHora, setRemarcarHora] = useState('');
@@ -195,9 +205,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Save General Configuration
   const handleSalvarConfig = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    storageService.saveConfig(formData);
-    onConfigChange(formData);
-    void salvarConfigSite(formData).then((res) => {
+    // Os dias abertos passam a vir da grade semanal
+    const semana = semanaDaConfig(formData);
+    const novaConfig: ConfiguracoesBarbearia = {
+      ...formData,
+      horarios_semana: semana,
+      dias_funcionamento: semana.flatMap((d, i) => (d.aberto ? [i] : [])),
+    };
+    setFormData(novaConfig);
+    storageService.saveConfig(novaConfig);
+    onConfigChange(novaConfig);
+    void salvarConfigSite(novaConfig).then((res) => {
       setErroSincronizacao(res.success ? null : `configurações não publicadas para os clientes: ${res.message}`);
     });
     setMensagemSalvo(true);
@@ -338,6 +356,78 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
 
     setModalRemarcar(null);
+  };
+
+  // Editar os serviços de um agendamento (cliente pediu algo diferente do contratado)
+  const paraNumero = (texto: string) => Number(texto.replace(',', '.')) || 0;
+  const numeroParaTexto = (valor: number) => Math.max(0, valor).toFixed(2).replace('.', ',');
+
+  const handleAbrirServicos = (ag: Agendamento) => {
+    setModalServicos(ag);
+    setServicosEdit([...ag.servicos]);
+    setPrecoEdit(numeroParaTexto(Number(ag.preco_total) || 0));
+    setDuracaoEdit(ag.duracao_total_minutos || 30);
+    setAvulsoNome('');
+    setAvulsoPreco('');
+    setAvulsoMinutos('0');
+  };
+
+  // Marcar/desmarcar um serviço ajusta o valor e a duração; os campos continuam editáveis à mão
+  const handleAlternarServicoEdit = (nome: string) => {
+    const tem = servicosEdit.includes(nome);
+    const sinal = tem ? -1 : 1;
+    const cadastrado = servicos.find((s) => s.nome === nome);
+    setServicosEdit(tem ? servicosEdit.filter((n) => n !== nome) : [...servicosEdit, nome]);
+    if (cadastrado) {
+      setPrecoEdit(numeroParaTexto(paraNumero(precoEdit) + sinal * Number(cadastrado.preco)));
+      setDuracaoEdit((d) => Math.max(15, d + sinal * cadastrado.duracao_minutos));
+    }
+  };
+
+  const handleAdicionarAvulso = () => {
+    const nome = avulsoNome.trim();
+    if (!nome || servicosEdit.includes(nome)) return;
+    setServicosEdit([...servicosEdit, nome]);
+    setPrecoEdit(numeroParaTexto(paraNumero(precoEdit) + paraNumero(avulsoPreco)));
+    setDuracaoEdit((d) => Math.max(15, d + (Number(avulsoMinutos) || 0)));
+    setAvulsoNome('');
+    setAvulsoPreco('');
+    setAvulsoMinutos('0');
+  };
+
+  // Outro agendamento que passa a ser invadido pelo novo término
+  const conflitoServicos = modalServicos
+    ? (() => {
+        const ini = new Date(modalServicos.inicio).getTime();
+        const fim = ini + duracaoEdit * 60000;
+        return agendamentos.find(
+          (a) =>
+            a.id !== modalServicos.id &&
+            a.status !== 'cancelado' &&
+            new Date(a.inicio).getTime() < fim &&
+            new Date(a.fim).getTime() > ini
+        );
+      })()
+    : undefined;
+
+  const handleSalvarServicos = () => {
+    if (!modalServicos || servicosEdit.length === 0) return;
+    const inicio = new Date(modalServicos.inicio);
+    const fim = new Date(inicio.getTime() + duracaoEdit * 60000).toISOString();
+    const preco = paraNumero(precoEdit);
+
+    storageService.atualizarAgendamento(modalServicos.id, {
+      servicos: servicosEdit,
+      preco_total: preco,
+      duracao_total_minutos: duracaoEdit,
+      fim,
+    });
+    enviarAgendamentoRemoto(modalServicos.id);
+    atualizarListaAgendamentos();
+    setAvisoAcao({
+      texto: `Serviços de ${modalServicos.cliente_nome} atualizados: ${servicosEdit.join(', ')} (${formatarPreco(preco)}).`,
+    });
+    setModalServicos(null);
   };
 
   // Send WhatsApp Reminder
@@ -656,6 +746,16 @@ export default {
                               {concluido ? 'Editar Pagamento' : 'Concluir & Caixa'}
                             </button>
 
+                            {/* Botão de Alterar Serviços */}
+                            <button
+                              type="button"
+                              onClick={() => handleAbrirServicos(ag)}
+                              className="rounded-lg border border-[#3a2f27] px-2.5 py-1.5 text-xs text-[#b9ac9c] hover:border-[#cf9b56] hover:text-[#f3ece3]"
+                              title="Mudar os serviços e o valor deste agendamento"
+                            >
+                              Serviços
+                            </button>
+
                             {/* Botão de Remarcar */}
                             <button
                               type="button"
@@ -747,6 +847,158 @@ export default {
                       className="rounded-xl bg-[#cf9b56] px-4 py-1.5 text-xs font-bold text-[#121010] shadow hover:brightness-110"
                     >
                       Salvar no Caixa
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Alterar Serviços do Agendamento */}
+          {modalServicos && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-fadeIn">
+              <div className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-2xl border border-[#cf9b56] bg-[#221c18] p-5 shadow-2xl">
+                <div className="flex items-center justify-between pb-2 border-b border-[#3a2f27]">
+                  <h4 className="font-oswald text-base font-bold uppercase text-[#e3b976]">
+                    Serviços: {modalServicos.cliente_nome}
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setModalServicos(null)}
+                    className="text-[#b9ac9c] hover:text-[#f3ece3]"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="mt-3 flex flex-col gap-3 text-xs">
+                  <div>
+                    <label className="text-[#b9ac9c]">Serviços realizados</label>
+                    <div className="mt-1 flex flex-col gap-1.5">
+                      {[
+                        ...servicos.filter((s) => s.ativo !== false).map((s) => s.nome),
+                        ...servicosEdit.filter((n) => !servicos.some((s) => s.ativo !== false && s.nome === n)),
+                      ].map((nome) => {
+                        const marcado = servicosEdit.includes(nome);
+                        const cadastrado = servicos.find((s) => s.nome === nome);
+                        return (
+                          <label
+                            key={nome}
+                            className={`flex cursor-pointer items-center justify-between rounded-xl border px-3 py-2 transition-colors ${
+                              marcado
+                                ? 'border-[#cf9b56] bg-[#cf9b56]/15 text-[#f3ece3]'
+                                : 'border-[#3a2f27] bg-[#1c1815] text-[#b9ac9c]'
+                            }`}
+                          >
+                            <span className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={marcado}
+                                onChange={() => handleAlternarServicoEdit(nome)}
+                                className="h-4 w-4 rounded accent-[#cf9b56]"
+                              />
+                              {nome}
+                            </span>
+                            {cadastrado && (
+                              <span className="text-[#e3b976]">{formatarPreco(Number(cadastrado.preco))}</span>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-[#3a2f27] bg-[#1c1815] p-3">
+                    <label className="text-[#b9ac9c]">Outro serviço (avulso)</label>
+                    <input
+                      type="text"
+                      value={avulsoNome}
+                      onChange={(e) => setAvulsoNome(e.target.value)}
+                      placeholder="Ex: Pigmentação"
+                      className="mt-1 w-full rounded-lg border border-[#3a2f27] bg-[#221c18] px-3 py-2 text-xs text-[#f3ece3] outline-none focus:border-[#cf9b56]"
+                    />
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={avulsoPreco}
+                        onChange={(e) => setAvulsoPreco(e.target.value)}
+                        placeholder="Valor (R$)"
+                        className="rounded-lg border border-[#3a2f27] bg-[#221c18] px-3 py-2 text-xs text-[#f3ece3] outline-none focus:border-[#cf9b56]"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        step={5}
+                        value={avulsoMinutos}
+                        onChange={(e) => setAvulsoMinutos(e.target.value)}
+                        placeholder="Minutos"
+                        className="rounded-lg border border-[#3a2f27] bg-[#221c18] px-3 py-2 text-xs text-[#f3ece3] outline-none focus:border-[#cf9b56]"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!avulsoNome.trim()}
+                      onClick={handleAdicionarAvulso}
+                      className="mt-2 w-full rounded-lg border border-[#cf9b56] py-1.5 font-semibold text-[#e3b976] hover:bg-[#cf9b56]/15 disabled:opacity-40"
+                    >
+                      Adicionar serviço avulso
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[#b9ac9c]">Valor total (R$)</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={precoEdit}
+                        onChange={(e) => setPrecoEdit(e.target.value)}
+                        className="mt-1 w-full rounded-xl border border-[#3a2f27] bg-[#1c1815] px-3 py-2 text-xs text-[#f3ece3] outline-none focus:border-[#cf9b56]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[#b9ac9c]">Duração (min)</label>
+                      <input
+                        type="number"
+                        min={15}
+                        step={5}
+                        value={duracaoEdit}
+                        onChange={(e) => setDuracaoEdit(Math.max(15, Number(e.target.value) || 15))}
+                        className="mt-1 w-full rounded-xl border border-[#3a2f27] bg-[#1c1815] px-3 py-2 text-xs text-[#f3ece3] outline-none focus:border-[#cf9b56]"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-[#b9ac9c]">
+                    Termina às{' '}
+                    <strong className="text-[#f3ece3]">
+                      {formatarHora(new Date(new Date(modalServicos.inicio).getTime() + duracaoEdit * 60000).toISOString())}
+                    </strong>
+                  </p>
+
+                  {conflitoServicos && (
+                    <p className="rounded-lg border border-amber-700 bg-amber-950/50 p-2 text-amber-200">
+                      Atenção: esse término invade o horário de {conflitoServicos.cliente_nome} (
+                      {formatarHora(conflitoServicos.inicio)}). Você ainda pode salvar.
+                    </p>
+                  )}
+
+                  <div className="mt-1 flex justify-end gap-2 pt-2 border-t border-[#3a2f27]">
+                    <button
+                      type="button"
+                      onClick={() => setModalServicos(null)}
+                      className="rounded-xl border border-[#3a2f27] px-3 py-1.5 font-semibold text-[#b9ac9c]"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={servicosEdit.length === 0}
+                      onClick={handleSalvarServicos}
+                      className="rounded-xl bg-[#cf9b56] px-3 py-1.5 font-bold text-[#121010] disabled:opacity-50"
+                    >
+                      Salvar Serviços
                     </button>
                   </div>
                 </div>
@@ -1583,129 +1835,134 @@ export default {
 
           <div className="rounded-2xl border border-[#3a2f27] bg-[#221c18] p-5 shadow-lg space-y-4">
             <h3 className="font-oswald text-base font-semibold uppercase text-[#e3b976]">
-              Horário de Funcionamento & Grade
+              Horário de Funcionamento, Almoço & Folgas
             </h3>
+            <p className="text-[11px] text-[#b9ac9c]">
+              Defina cada dia da semana. Dia desmarcado = folga (o cliente não consegue agendar). O almoço bloqueia os
+              horários automaticamente.
+            </p>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="text-xs text-[#b9ac9c]">Abertura</label>
-                <input
-                  type="time"
-                  value={formData.hora_abertura}
-                  onChange={(e) => setFormData({ ...formData, hora_abertura: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-[#3a2f27] bg-[#1c1815] px-3 py-2 text-xs text-[#f3ece3] outline-none focus:border-[#cf9b56]"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-[#b9ac9c]">Fechamento</label>
-                <input
-                  type="time"
-                  value={formData.hora_fechamento}
-                  onChange={(e) => setFormData({ ...formData, hora_fechamento: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-[#3a2f27] bg-[#1c1815] px-3 py-2 text-xs text-[#f3ece3] outline-none focus:border-[#cf9b56]"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-[#b9ac9c]">Intervalo (min)</label>
-                <select
-                  value={formData.intervalo_minutos}
-                  onChange={(e) => setFormData({ ...formData, intervalo_minutos: Number(e.target.value) })}
-                  className="mt-1 w-full rounded-xl border border-[#3a2f27] bg-[#1c1815] px-2 py-2 text-xs text-[#f3ece3] outline-none focus:border-[#cf9b56]"
-                >
-                  <option value={15}>15 minutos</option>
-                  <option value={30}>30 minutos</option>
-                  <option value={45}>45 minutos</option>
-                  <option value={60}>60 minutos</option>
-                </select>
-              </div>
+            <div className="max-w-[12rem]">
+              <label className="text-xs text-[#b9ac9c]">Intervalo da grade</label>
+              <select
+                value={formData.intervalo_minutos}
+                onChange={(e) => setFormData({ ...formData, intervalo_minutos: Number(e.target.value) })}
+                className="mt-1 w-full rounded-xl border border-[#3a2f27] bg-[#1c1815] px-2 py-2 text-xs text-[#f3ece3] outline-none focus:border-[#cf9b56]"
+              >
+                <option value={15}>15 minutos</option>
+                <option value={30}>30 minutos</option>
+                <option value={45}>45 minutos</option>
+                <option value={60}>60 minutos</option>
+              </select>
             </div>
 
-            {/* SEÇÃO DO HORÁRIO DE ALMOÇO */}
-            <div className="mt-4 pt-4 border-t border-[#3a2f27] space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-oswald text-sm font-semibold uppercase text-[#e3b976] flex items-center gap-1.5">
-                    <span>🍽️</span> Horário de Almoço / Pausa
-                  </h4>
-                  <p className="text-[11px] text-[#b9ac9c] mt-0.5">
-                    Os horários selecionados serão bloqueados automaticamente para agendamentos de clientes.
-                  </p>
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer text-xs text-[#b9ac9c]">
-                  <input
-                    type="checkbox"
-                    checked={formData.pausa_almoco ?? true}
-                    onChange={(e) => setFormData({ ...formData, pausa_almoco: e.target.checked })}
-                    className="h-4 w-4 rounded accent-[#cf9b56]"
-                  />
-                  Pausa ativa
-                </label>
-              </div>
+            <div className="flex flex-col gap-2.5">
+              {(() => {
+                const semana = semanaDaConfig(formData);
+                const nomesDias = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                const alterarDia = (dia: number, mudanca: Partial<HorarioDia>) =>
+                  setFormData({
+                    ...formData,
+                    horarios_semana: semana.map((d, i) => (i === dia ? { ...d, ...mudanca } : d)),
+                  });
+                const copiarParaTodos = (dia: number) =>
+                  setFormData({
+                    ...formData,
+                    horarios_semana: semana.map((d, i) => (i === dia ? d : { ...semana[dia], aberto: d.aberto })),
+                  });
+                const campo =
+                  'w-full rounded-lg border border-[#3a2f27] bg-[#221c18] px-2 py-1.5 text-xs text-[#f3ece3] outline-none focus:border-[#cf9b56]';
 
-              {(formData.pausa_almoco ?? true) && (
-                <div className="rounded-xl border border-[#3a2f27] bg-[#1c1815] p-3.5 space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs text-[#b9ac9c] block mb-1">Início do Almoço</label>
-                      <input
-                        type="time"
-                        value={formData.almoco_inicio || '12:00'}
-                        onChange={(e) => setFormData({ ...formData, almoco_inicio: e.target.value })}
-                        className="w-full rounded-xl border border-[#3a2f27] bg-[#221c18] px-3 py-2 text-xs text-[#f3ece3] outline-none focus:border-[#cf9b56]"
-                      />
+                return semana.map((d, dia) => (
+                  <div
+                    key={dia}
+                    className={`rounded-xl border p-3 ${
+                      d.aberto ? 'border-[#3a2f27] bg-[#1c1815]' : 'border-[#3a2f27]/60 bg-[#1c1815]/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-[#f3ece3]">
+                        <input
+                          type="checkbox"
+                          checked={d.aberto}
+                          onChange={(e) => alterarDia(dia, { aberto: e.target.checked })}
+                          className="h-4 w-4 rounded accent-[#cf9b56]"
+                        />
+                        {nomesDias[dia]}
+                        {!d.aberto && <span className="text-[11px] font-normal text-[#b9ac9c]">Folga</span>}
+                      </label>
+                      {d.aberto && (
+                        <button
+                          type="button"
+                          onClick={() => copiarParaTodos(dia)}
+                          className="text-[11px] text-[#e3b976] underline-offset-2 hover:underline"
+                          title="Aplica o horário e o almoço deste dia aos outros dias (os dias de folga continuam de folga)"
+                        >
+                          Copiar para os outros dias
+                        </button>
+                      )}
                     </div>
-                    <div>
-                      <label className="text-xs text-[#b9ac9c] block mb-1">Fim do Almoço</label>
-                      <input
-                        type="time"
-                        value={formData.almoco_fim || '13:00'}
-                        onChange={(e) => setFormData({ ...formData, almoco_fim: e.target.value })}
-                        className="w-full rounded-xl border border-[#3a2f27] bg-[#221c18] px-3 py-2 text-xs text-[#f3ece3] outline-none focus:border-[#cf9b56]"
-                      />
-                    </div>
-                  </div>
 
-                  {/* Atalhos rápidos para o almoço */}
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="text-[10px] text-[#b9ac9c] mr-1">Atalhos rápidos:</span>
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, almoco_inicio: '12:00', almoco_fim: '13:00' })}
-                      className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold border transition-all ${
-                        formData.almoco_inicio === '12:00' && formData.almoco_fim === '13:00'
-                          ? 'border-[#cf9b56] bg-[#cf9b56] text-[#121010]'
-                          : 'border-[#3a2f27] bg-[#221c18] text-[#b9ac9c] hover:border-[#cf9b56]'
-                      }`}
-                    >
-                      12:00 às 13:00 (1h)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, almoco_inicio: '12:00', almoco_fim: '13:30' })}
-                      className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold border transition-all ${
-                        formData.almoco_inicio === '12:00' && formData.almoco_fim === '13:30'
-                          ? 'border-[#cf9b56] bg-[#cf9b56] text-[#121010]'
-                          : 'border-[#3a2f27] bg-[#221c18] text-[#b9ac9c] hover:border-[#cf9b56]'
-                      }`}
-                    >
-                      12:00 às 13:30 (1h30)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, almoco_inicio: '13:00', almoco_fim: '14:00' })}
-                      className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold border transition-all ${
-                        formData.almoco_inicio === '13:00' && formData.almoco_fim === '14:00'
-                          ? 'border-[#cf9b56] bg-[#cf9b56] text-[#121010]'
-                          : 'border-[#3a2f27] bg-[#221c18] text-[#b9ac9c] hover:border-[#cf9b56]'
-                      }`}
-                    >
-                      13:00 às 14:00 (1h)
-                    </button>
+                    {d.aberto && (
+                      <div className="mt-2.5 space-y-2.5">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[11px] text-[#b9ac9c]">Abertura</label>
+                            <input
+                              type="time"
+                              value={d.abertura}
+                              onChange={(e) => alterarDia(dia, { abertura: e.target.value })}
+                              className={campo}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[11px] text-[#b9ac9c]">Fechamento</label>
+                            <input
+                              type="time"
+                              value={d.fechamento}
+                              onChange={(e) => alterarDia(dia, { fechamento: e.target.value })}
+                              className={campo}
+                            />
+                          </div>
+                        </div>
+
+                        <label className="flex cursor-pointer items-center gap-2 text-xs text-[#b9ac9c]">
+                          <input
+                            type="checkbox"
+                            checked={d.pausa_almoco}
+                            onChange={(e) => alterarDia(dia, { pausa_almoco: e.target.checked })}
+                            className="h-4 w-4 rounded accent-[#cf9b56]"
+                          />
+                          🍽️ Pausa de almoço / folga no meio do dia
+                        </label>
+
+                        {d.pausa_almoco && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[11px] text-[#b9ac9c]">Início da pausa</label>
+                              <input
+                                type="time"
+                                value={d.almoco_inicio}
+                                onChange={(e) => alterarDia(dia, { almoco_inicio: e.target.value })}
+                                className={campo}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] text-[#b9ac9c]">Fim da pausa</label>
+                              <input
+                                type="time"
+                                value={d.almoco_fim}
+                                onChange={(e) => alterarDia(dia, { almoco_fim: e.target.value })}
+                                className={campo}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                ));
+              })()}
             </div>
           </div>
 

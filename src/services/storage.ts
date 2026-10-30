@@ -1,6 +1,7 @@
 import { Servico, Agendamento, ConfiguracoesBarbearia, UltimoAgendamentoCliente, FormaPagamento } from '../types';
 import { DEFAULT_CONFIG, DEFAULT_SERVICOS } from '../constants/defaultData';
 import { dataLocalISO, dataLocalDeISO, mesLocalISO } from '../utils/datas';
+import { horarioDoDia } from '../utils/horarios';
 
 const STORAGE_KEYS = {
   CONFIG: 'caymi_configuracoes',
@@ -185,6 +186,11 @@ export const storageService = {
       .map((s) => s.hora);
   },
 
+  // O barbeiro abre neste dia da semana?
+  diaAberto(dataYYYYMMDD: string): boolean {
+    return horarioDoDia(this.getConfig(), new Date(`${dataYYYYMMDD}T00:00:00`).getDay()).aberto;
+  },
+
   // Todos os horários do dia dentro do expediente, marcando quais estão livres.
   // `ocupadosRemotos` são os horários ocupados vindos do Supabase (todos os aparelhos). Quando vierem,
   // valem sozinhos: a cópia local pode estar desatualizada (ex.: o barbeiro cancelou pelo celular dele).
@@ -201,21 +207,26 @@ export const storageService = {
         (a) => a.status !== 'cancelado' && dataLocalDeISO(a.inicio) === dataYYYYMMDD
       );
 
-    const [horaAbre, minAbre] = config.hora_abertura.split(':').map(Number);
-    const [horaFecha, minFecha] = config.hora_fechamento.split(':').map(Number);
+    // Horário do dia da semana desta data; dia fechado não tem horários
+    const diaSemana = new Date(`${dataYYYYMMDD}T00:00:00`).getDay();
+    const dia = horarioDoDia(config, diaSemana);
+    if (!dia.aberto) return [];
+
+    const [horaAbre, minAbre] = dia.abertura.split(':').map(Number);
+    const [horaFecha, minFecha] = dia.fechamento.split(':').map(Number);
 
     const inicioMinutosDia = horaAbre * 60 + minAbre;
     const fimMinutosDia = horaFecha * 60 + minFecha;
     const intervalo = config.intervalo_minutos || 30;
 
     // Horário de almoço
-    const almocoAtivo = config.pausa_almoco ?? true;
+    const almocoAtivo = dia.pausa_almoco;
     let almocoInicioMin = -1;
     let almocoFimMin = -1;
 
-    if (almocoAtivo && config.almoco_inicio && config.almoco_fim) {
-      const [hAlmocoAbre, mAlmocoAbre] = config.almoco_inicio.split(':').map(Number);
-      const [hAlmocoFecha, mAlmocoFecha] = config.almoco_fim.split(':').map(Number);
+    if (almocoAtivo && dia.almoco_inicio && dia.almoco_fim) {
+      const [hAlmocoAbre, mAlmocoAbre] = dia.almoco_inicio.split(':').map(Number);
+      const [hAlmocoFecha, mAlmocoFecha] = dia.almoco_fim.split(':').map(Number);
       almocoInicioMin = hAlmocoAbre * 60 + mAlmocoAbre;
       almocoFimMin = hAlmocoFecha * 60 + mAlmocoFecha;
     }

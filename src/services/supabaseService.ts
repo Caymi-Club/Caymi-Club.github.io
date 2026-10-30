@@ -275,6 +275,8 @@ const CAMPOS_PUBLICOS = [
   'almoco_inicio',
   'almoco_fim',
   'intervalo_minutos',
+  'dias_funcionamento',
+  'horarios_semana',
   'exibir_promo_app',
   'promo_app_nome',
   'promo_app_badge',

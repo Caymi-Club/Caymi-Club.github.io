@@ -420,6 +420,10 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({ config, servicos, onAg
             <p className="p-4 text-center text-xs text-[#b9ac9c] animate-pulse">
               Consultando horários livres…
             </p>
+          ) : !storageService.diaAberto(dataSelecionada) ? (
+            <p className="rounded-xl border border-dashed border-[#6f4426] bg-[#1c1815]/50 p-4 text-center text-xs text-[#e3b976]">
+              A barbearia não atende neste dia da semana. Escolha outra data.
+            </p>
           ) : !grade.some((s) => s.livre) ? (
             <p className="rounded-xl border border-dashed border-[#6f4426] bg-[#1c1815]/50 p-4 text-center text-xs text-[#e3b976]">
               Nenhum horário livre para essa data ou os horários já foram preenchidos. Tente outra data.
